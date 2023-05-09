@@ -1,8 +1,5 @@
 #!/bin/bash
 
-cd deployment
+cd deploy-unity
 git pull origin main
 cd ..
-git add deployment
-git commit -m "Update submodule to the latest version"
-git push
