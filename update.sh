@@ -1,5 +1,5 @@
 #!/bin/bash
 
-cd deployment
+cd deploy-unity
 git pull origin main
 cd ..
