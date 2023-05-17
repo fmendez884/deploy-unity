@@ -9,34 +9,41 @@ import paramiko
 # Load environment variables from .env file
 load_dotenv()
 
-WEBGL_BUILD_PATH = os.getenv('WEBGL_BUILD_PATH')
-LINUX_BUILD_PATH = os.getenv('LINUX_BUILD_PATH')
+# Build Paths
+WEBGL_BUILD_PATH = os.environ['WEBGL_BUILD_PATH']
+LINUX_BUILD_PATH = os.environ['LINUX_BUILD_PATH']
 
-# Variables for staging environment
-STAGING_AWS_SSH_KEY = os.getenv('AWS_STAGE_SSH_KEY')
-STAGING_AWS_USER = os.getenv('AWS_STAGE_USER')
-STAGING_AWS_IP = os.getenv('AWS_STAGE_IP')
+# AWS Production
+AWS_PROD_SSH_KEYPAIR = os.path.expanduser(os.environ['AWS_PROD_SSH_KEYPAIR'])
+AWS_PROD_IP = os.environ['AWS_PROD_IP']
+AWS_PROD_USER = os.environ['AWS_PROD_USER']
 
-# Variables for production environment
-PRODUCTION_AWS_SSH_KEY = os.getenv('AWS_PROD_SSH_KEY')
-PRODUCTION_AWS_USER = os.getenv('AWS_PROD_USER')
-PRODUCTION_AWS_IP = os.getenv('AWS_PROD_IP')
+# AWS Staging
+AWS_STAGE_SSH_KEYPAIR = os.path.expanduser(os.environ['AWS_STAGE_SSH_KEYPAIR'])
+AWS_STAGE_IP = os.environ['AWS_STAGE_IP']
+AWS_STAGE_USER = os.environ['AWS_STAGE_USER']
 
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
-GITHUB_REPO = os.getenv('GITHUB_REPO')
+STAGING_TARGET_USER = os.environ['STAGING_TARGET_USER']
+STAGING_TARGET_USER_PASSWORD = os.environ['STAGING_TARGET_USER_PASSWORD']
+
+# GitHub
+GITHUB_TOKEN = os.environ['GITHUB_TOKEN']
+GITHUB_WEBAPP_REPO = os.environ['GITHUB_WEBAPP_REPO']
 
 def determine_environment():
+
     branch = os.getenv('GITHUB_REF', 'refs/heads/main')
     if branch.startswith('refs/heads/staging'):
         os.environ['MY_APP_ENV'] = 'staging'
-        os.environ['AWS_USER'] = STAGING_AWS_USER
-        os.environ['AWS_IP'] = STAGING_AWS_IP
-        os.environ['AWS_SSH_KEY'] = STAGING_AWS_SSH_KEY
+        os.environ['AWS_USER'] = os.environ.get('STAGING_AWS_USER', '')
+        os.environ['AWS_IP'] = os.environ.get('STAGING_AWS_IP', '')
+        os.environ['AWS_SSH_KEY'] = os.environ.get('STAGING_AWS_SSH_KEY', '')
     else:
         os.environ['MY_APP_ENV'] = 'production'
-        os.environ['AWS_USER'] = PRODUCTION_AWS_USER
-        os.environ['AWS_IP'] = PRODUCTION_AWS_IP
-        os.environ['AWS_SSH_KEY'] = PRODUCTION_AWS_SSH_KEY
+        os.environ['AWS_USER'] = os.environ.get('PRODUCTION_AWS_USER', '')
+        os.environ['AWS_IP'] = os.environ.get('PRODUCTION_AWS_IP', '')
+        os.environ['AWS_SSH_KEY'] = os.environ.get('PRODUCTION_AWS_SSH_KEY', '')
+
 
 def validate_build_path(build_path, build_type):
     if not build_path:
@@ -77,6 +84,7 @@ def deploy_linux_build(build_path):
                 os.path.relpath(os.path.join(root, file),
                     os.path.join(build_path, '..')))
     zipf.close()
+    print('file zipped')
     
     user = os.getenv('AWS_USER')
     ip = os.getenv('AWS_IP')
@@ -87,6 +95,7 @@ def deploy_linux_build(build_path):
     # SCP the zip file to the AWS instance
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print('connecting')
     ssh.connect(hostname=ip, username=user, key_filename=key_path)
     scp = ssh.open_sftp()
     scp.put(local_file, remote_path)
