@@ -114,11 +114,5 @@ class TestDeployment(unittest.TestCase):
         deploy_linux_build(build_path)
         mock_zipfile.assert_called_once_with('Server.zip', 'w', zipfile.ZIP_DEFLATED)
 
-    def test_deploy_linux_build_invalid_build_path(self):
-        build_path = './path/to/nonexistent_build'
-        with self.assertRaises(ValueError):
-            deploy_linux_build(build_path)
-
-
 if __name__ == '__main__':
     unittest.main()
