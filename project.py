@@ -6,6 +6,7 @@ import errno
 import logging
 from dotenv import load_dotenv
 import zipfile
+import tarfile
 import paramiko
 import subprocess
 
@@ -60,10 +61,11 @@ def deploy_build(build_type, build_path):
     Orchestrates the deployment of Unity builds based on the build type and validated build path.
     """
     validate_build_path(build_path, build_type)
-    if build_type == 'webgl':
-        deploy_webgl_build(build_path)
-    elif build_type == 'linux':
+    if build_type == 'linux':
         deploy_linux_build(build_path)
+        
+    elif build_type == 'webgl':
+        deploy_webgl_build(build_path)
 
 def deploy_webgl_build(build_path):
     # Implementation
@@ -74,22 +76,32 @@ def deploy_linux_build(build_path):
     Implementation for Linux build deployment
     """
     print("Deploying Linux")
-    # Create a .zip file for Linux server
-    zipf = zipfile.ZipFile('Server.zip', 'w', zipfile.ZIP_DEFLATED)
-    for root, dirs, files in os.walk(build_path):
-        for file in files:
-            file_path = os.path.join(root, file)  
-            zipf.write(os.path.join(root, file),
-                os.path.relpath(os.path.join(root, file),
-                    os.path.join(build_path, '..')))
-    zipf.close()
-    print('file zipped')
+    
+    # Create a .zip file for Linux server	
+    # file = 'Server.zip'	
+    # zipf = zipfile.ZipFile('Server.zip', 'w', zipfile.ZIP_DEFLATED)	
+    # for root, dirs, files in os.walk(build_path):	
+    #     for file in files:	
+    #         file_path = os.path.join(root, file)  	
+    #         zipf.write(os.path.join(root, file),	
+    #             os.path.relpath(os.path.join(root, file),	
+    #                 os.path.join(build_path, '..')))	
+    # zipf.close()	
+    # print('file zipped')
+    
+    # Create a .tar.gz file for Linux server
+    file_name = 'Server.tar.gz'
+    with tarfile.open(file_name, 'w:gz') as tar:
+        for root, dirs, files in os.walk(build_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                tar.add(file_path, arcname=os.path.relpath(file_path, build_path))
+    
+    print('Files compressed.')
 
-    # Define the file path
-    file = 'Server.zip'
+    # Define the local file path
     current_directory = os.getcwd()
-    local_file = os.path.join(current_directory, file)
-
+    local_file = os.path.join(current_directory, file_name)
     print(f'Local file path: {local_file}')
 
     # Define AWS credentials and SSH key
@@ -100,9 +112,8 @@ def deploy_linux_build(build_path):
     print(f'AWS user: {user}, IP: {ip}, SSH key path: {key_path}')
 
     # Define remote file path
-    remote_dir = '.'  # '.' denotes the home directory of the user
-    # remote_file = os.path.join(remote_dir, file)
-    remote_file = '.' + file
+    remote_dir = './'
+    remote_file = remote_dir + file_name
     print(f'Remote file path: {remote_file}')
 
     # Connect and transfer file
@@ -113,50 +124,62 @@ def deploy_linux_build(build_path):
     ssh.connect(hostname=ip, username=user, key_filename=key_path)
 
     print('SSH connection established. Opening SFTP session...')
-    sftp = ssh.open_sftp()
+    scp = ssh.open_sftp()
 
-    print('Starting file transfer...')
-    try:
-        sftp.stat(remote_file)
-        print("File already exists, overwriting...")
-    except IOError as e:
-        if e.errno == errno.ENOENT:
-            # If file does not exist, then upload it
-            print("File does not exist, creating...")
-        else:
-            raise
-
-    sftp.put(local_file, remote_file)
+    print('Starting file transfer...', local_file, ' > ', remote_file)
+    scp.put(local_file, remote_file)
 
     print('File transfer completed. Closing SFTP session...')
-    sftp.close()  # Make sure to close the connection after the file transfer is complete.
-    
-import subprocess
+    scp.close()
 
-def execute_commands():
-    # Move certificate files
-    subprocess.run(["mv", "./Server/cert.json", "./"])
-    subprocess.run(["mv", "./Server/cert.pfx", "./"])
+    print('File transferred.')
 
-    # Remove old server directory
-    subprocess.run(["rm", "-r", "./Server"])
+    # Perform further operations on the remote server
+    execute_remote_commands(ssh)
 
-    # Unzip new server files
-    subprocess.run(["unzip", "./Server.zip"])
+    # Close the SSH connection
+    ssh.close()
 
-    # Change to the server directory
-    subprocess.run(["cd", "./Server"], shell=True)
+def execute_remote_commands(ssh):
+    # Execute commands on the remote server
+    commands = [
+        "pwd",
+        'ls',
+        "pkill -f 'Server.x86_64' || true",
+        "ls",
+        "mv ./Server/cert.json ./",
+        "mv ./Server/cert.pfx ./",
+        "rm -r ./Server",
+        'pwd',
+        "ls",
+        "mkdir -p ./Server",
+        'ls',
+        "tar -xzf ./Server.tar.gz -C ./Server",
+        "ls",
+        "mv ./cert.pfx ./Server",
+        "mv ./cert.json ./Server",
+        'ls',
+        'ls ./Server',
+        "chmod +x ./Server/Server.x86_64",
+        "(cd ./Server && screen -dmS game ./Server.x86_64) && exit"
+    ]
 
-    # Make the server file executable
-    subprocess.run(["chmod", "+x", "./Server.x86_64"])
-
-    # Run the server in the background with nohup and provide input
-    subprocess.run(["nohup", "./Server.x86_64"], input="\n", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def compress_files():
-    # Compress the server files using tar and xz compression
-    subprocess.run(["tar", "-cJf", "Server.tar.xz", "Server"])
-
+    for command in commands:
+        try:
+            stdin, stdout, stderr = ssh.exec_command(command)
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                print(f'Error executing command: {command}')
+                error_message = stderr.read().decode().strip()
+                print(f'Error message: {error_message}')
+            else:
+                print(f'Command executed successfully: {command}')
+                print('Command output:')
+                print(stdout.read().decode().strip())
+        except Exception as e:
+            print(f'Exception during command execution: {command}')
+            print(f'Exception details: {str(e)}')
+    return True  # return True only if all commands execute successfully
 
 def main():
     """
@@ -177,6 +200,6 @@ def main():
             deploy_build('linux', LINUX_BUILD_PATH)
         if WEBGL_BUILD_PATH:
             deploy_build('webgl', WEBGL_BUILD_PATH)
-        
+
 if __name__ == "__main__":
     main()
