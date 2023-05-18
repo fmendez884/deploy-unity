@@ -198,7 +198,7 @@ def deploy_webgl_build(webgl_build_path):
     for root, _, files in os.walk(webgl_build_path):
         for file in files:
             file_path = os.path.join(root, file)
-            path_in_repo = os.path.join('public', os.path.relpath(file_path, webgl_build_path))
+            path_in_repo = os.path.join('ClientApp', 'public', 'Build', os.path.relpath(file_path, webgl_build_path))
             push_file_to_github(file_path, path_in_repo.replace('\\', '/'))
 
 def main():
