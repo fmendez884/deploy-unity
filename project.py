@@ -3,6 +3,7 @@
 import os
 import sys
 import errno
+import shutil
 import logging
 from dotenv import load_dotenv
 import zipfile
@@ -66,10 +67,6 @@ def deploy_build(build_type, build_path):
         
     elif build_type == 'webgl':
         deploy_webgl_build(build_path)
-
-def deploy_webgl_build(build_path):
-    # Implementation
-    pass
 
 def deploy_linux_build(build_path):
     """
@@ -180,6 +177,53 @@ def execute_remote_commands(ssh):
             print(f'Exception during command execution: {command}')
             print(f'Exception details: {str(e)}')
     return True  # return True only if all commands execute successfully
+
+def deploy_webgl_build(webgl_build_path, webapp_repo_path):
+    """
+    Deploys the WebGL build by orchestrating the build and pushing the changes to the Webapp Repo.
+    """
+    # Orchestrate the WebGL build
+    orchestrate_webgl_build(webgl_build_path, webapp_repo_path)
+
+    # Push the changes to the Webapp Repo
+    push_to_webapp_repo(webapp_repo_path)
+    
+def copy_files(src, dst):
+    if os.path.isdir(src):
+        for root, dirs, files in os.walk(src):
+            for dir in dirs:
+                # Exclude unnecessary directories
+                if dir != "StreamingAssets":
+                    src_path = os.path.join(root, dir)
+                    dst_path = os.path.join(dst, os.path.relpath(src_path, src))
+                    os.makedirs(dst_path, exist_ok=True)
+            for file in files:
+                src_path = os.path.join(root, file)
+                dst_path = os.path.join(dst, os.path.relpath(src_path, src))
+                shutil.copy2(src_path, dst_path)
+    else:
+        shutil.copy2(src, dst)
+
+def orchestrate_webgl_build(webgl_build_path, webapp_repo_path):
+    # Copy the necessary files and directories to the Webapp Repo
+    copy_files(os.path.join(webgl_build_path, 'Build'), os.path.join(webapp_repo_path, 'public', 'build'))
+    copy_files(os.path.join(webgl_build_path, 'TemplateData'), os.path.join(webapp_repo_path, 'public', 'template-data'))
+    shutil.copy2(os.path.join(webgl_build_path, 'index.html'), os.path.join(webapp_repo_path, 'public'))
+
+def push_to_webapp_repo(webapp_repo_path):
+    branch_name = get_current_git_branch
+    # Change to the Webapp Repo directory
+    os.chdir(webapp_repo_path)
+
+    # Check out the desired branch
+    subprocess.run(['git', 'checkout', branch_name])
+
+    # Add and commit the changes
+    subprocess.run(['git', 'add', '-A'])
+    subprocess.run(['git', 'commit', '-m', 'Update WebGL build'])
+
+    # Push the changes
+    subprocess.run(['git', 'push', 'origin', branch_name])
 
 def main():
     """
