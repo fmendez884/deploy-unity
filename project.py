@@ -3,20 +3,27 @@
 import os
 import sys
 import errno
+import base64
 import shutil
 import logging
-from dotenv import load_dotenv
-import zipfile
-import tarfile
+import requests
 import paramiko
 import subprocess
+import zipfile
+import tarfile
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Build Paths
-WEBGL_BUILD_PATH = os.environ['WEBGL_BUILD_PATH']
-LINUX_BUILD_PATH = os.environ['LINUX_BUILD_PATH']
+WEBGL_BUILD_PATH = os.getenv('WEBGL_BUILD_PATH')
+LINUX_BUILD_PATH = os.getenv('LINUX_BUILD_PATH')
+ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
+WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
+REPO_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-1].split('.git')[0]  # Get repo name from URL
+USER_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-2]  # Get username from URL
+COMMIT_MESSAGE = 'Upload WebGL build'
 
 def get_current_git_branch():
     try:
@@ -73,18 +80,6 @@ def deploy_linux_build(build_path):
     Implementation for Linux build deployment
     """
     print("Deploying Linux")
-    
-    # Create a .zip file for Linux server	
-    # file = 'Server.zip'	
-    # zipf = zipfile.ZipFile('Server.zip', 'w', zipfile.ZIP_DEFLATED)	
-    # for root, dirs, files in os.walk(build_path):	
-    #     for file in files:	
-    #         file_path = os.path.join(root, file)  	
-    #         zipf.write(os.path.join(root, file),	
-    #             os.path.relpath(os.path.join(root, file),	
-    #                 os.path.join(build_path, '..')))	
-    # zipf.close()	
-    # print('file zipped')
     
     # Create a .tar.gz file for Linux server
     file_name = 'Server.tar.gz'
@@ -178,57 +173,39 @@ def execute_remote_commands(ssh):
             print(f'Exception details: {str(e)}')
     return True  # return True only if all commands execute successfully
 
-def deploy_webgl_build(webgl_build_path, webapp_repo_path):
-    """
-    Deploys the WebGL build by orchestrating the build and pushing the changes to the Webapp Repo.
-    """
-    # Orchestrate the WebGL build
-    orchestrate_webgl_build(webgl_build_path, webapp_repo_path)
+def get_file_content_base64(file_path):
+    with open(file_path, 'rb') as file:
+        return base64.b64encode(file.read()).decode('utf-8')
 
-    # Push the changes to the Webapp Repo
-    push_to_webapp_repo(webapp_repo_path)
-    
-def copy_files(src, dst):
-    if os.path.isdir(src):
-        for root, dirs, files in os.walk(src):
-            for dir in dirs:
-                # Exclude unnecessary directories
-                if dir != "StreamingAssets":
-                    src_path = os.path.join(root, dir)
-                    dst_path = os.path.join(dst, os.path.relpath(src_path, src))
-                    os.makedirs(dst_path, exist_ok=True)
-            for file in files:
-                src_path = os.path.join(root, file)
-                dst_path = os.path.join(dst, os.path.relpath(src_path, src))
-                shutil.copy2(src_path, dst_path)
+def push_file_to_github(file_path, path_in_repo):
+    url = f'https://api.github.com/repos/{USER_NAME}/{REPO_NAME}/contents/{path_in_repo}'
+    headers = {'Authorization': f'token {ACCESS_TOKEN_GITHUB}'}
+    data = {
+        'message': COMMIT_MESSAGE,
+        'content': get_file_content_base64(file_path)
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data['sha'] = response.json()['sha']
+        requests.put(url, headers=headers, json=data)
+    elif response.status_code == 404:
+        requests.put(url, headers=headers, json=data)
     else:
-        shutil.copy2(src, dst)
+        response.raise_for_status()
 
-def orchestrate_webgl_build(webgl_build_path, webapp_repo_path):
-    # Copy the necessary files and directories to the Webapp Repo
-    copy_files(os.path.join(webgl_build_path, 'Build'), os.path.join(webapp_repo_path, 'public', 'build'))
-    copy_files(os.path.join(webgl_build_path, 'TemplateData'), os.path.join(webapp_repo_path, 'public', 'template-data'))
-    shutil.copy2(os.path.join(webgl_build_path, 'index.html'), os.path.join(webapp_repo_path, 'public'))
-
-def push_to_webapp_repo(webapp_repo_path):
-    branch_name = get_current_git_branch
-    # Change to the Webapp Repo directory
-    os.chdir(webapp_repo_path)
-
-    # Check out the desired branch
-    subprocess.run(['git', 'checkout', branch_name])
-
-    # Add and commit the changes
-    subprocess.run(['git', 'add', '-A'])
-    subprocess.run(['git', 'commit', '-m', 'Update WebGL build'])
-
-    # Push the changes
-    subprocess.run(['git', 'push', 'origin', branch_name])
+def deploy_webgl_build(webgl_build_path):
+    print("Deploying WebGL")
+    for root, _, files in os.walk(webgl_build_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            path_in_repo = os.path.join('public', os.path.relpath(file_path, webgl_build_path))
+            push_file_to_github(file_path, path_in_repo.replace('\\', '/'))
 
 def main():
     """
     Main function for initiating the deployment process.
     """
+        
     determine_environment()
     # Check if running in GitHub actions
     if os.getenv('GITHUB_ACTIONS') == 'true':
