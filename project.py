@@ -3,14 +3,15 @@
 import os
 import sys
 import errno
+import json
+import zipfile
+import tarfile
 import base64
 import shutil
 import logging
 import requests
 import paramiko
 import subprocess
-import zipfile
-import tarfile
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,10 +30,16 @@ def get_current_git_branch():
     try:
         command = ['git', 'rev-parse', '--abbrev-ref', 'HEAD']
         result = subprocess.run(command, capture_output=True, text=True)
-        return result.stdout.strip()
+        branch = result.stdout.strip()
+
+        if branch not in ['staging', 'main']:
+            print(f"Warning: current branch '{branch}' is neither 'staging' nor 'main'. Defaulting to 'staging'.")
+            return 'staging'
+
+        return branch
     except subprocess.CalledProcessError as e:
         print(f"Error: {e}")
-        return None
+        return 'staging'  # Default to 'staging' in case of error
 
 def determine_environment():
     env = os.getenv('DEPLOY_ENV', None)
@@ -40,14 +47,14 @@ def determine_environment():
         branch = get_current_git_branch()
         env = 'staging' if branch == 'staging' else 'production'
     
-    if env == 'staging':
-        os.environ['AWS_USER'] = os.environ.get('AWS_STAGE_USER', '')
-        os.environ['AWS_IP'] = os.environ.get('AWS_STAGE_IP', '')
-        os.environ['AWS_SSH_KEY'] = os.environ.get('AWS_STAGE_SSH_KEYPAIR', '')
-    else:  # Default to production
+    if env == 'production':
         os.environ['AWS_USER'] = os.environ.get('AWS_PROD_USER', '')
         os.environ['AWS_IP'] = os.environ.get('AWS_PROD_IP', '')
         os.environ['AWS_SSH_KEY'] = os.environ.get('AWS_PROD_SSH_KEYPAIR', '')
+    else:  # Default to staging
+        os.environ['AWS_USER'] = os.environ.get('AWS_STAGE_USER', '')
+        os.environ['AWS_IP'] = os.environ.get('AWS_STAGE_IP', '')
+        os.environ['AWS_SSH_KEY'] = os.environ.get('AWS_STAGE_SSH_KEYPAIR', '')
 
     print(f"Deploying to {env}")
 
@@ -173,33 +180,81 @@ def execute_remote_commands(ssh):
             print(f'Exception details: {str(e)}')
     return True  # return True only if all commands execute successfully
 
+def deploy_webgl_build(webgl_build_path):
+    print("Deploying WebGL")
+    current_branch = get_current_git_branch()
+    file_paths = []
+    for root, _, files in os.walk(webgl_build_path):
+        for file in files:
+            file_paths.append(os.path.join(root, file))
+    push_files_to_github(file_paths, COMMIT_MESSAGE, current_branch)
+
 def get_file_content_base64(file_path):
     with open(file_path, 'rb') as file:
         return base64.b64encode(file.read()).decode('utf-8')
 
-def push_file_to_github(file_path, path_in_repo):
-    url = f'https://api.github.com/repos/{USER_NAME}/{REPO_NAME}/contents/{path_in_repo}'
+def create_blob(file_path):
+    url = f'https://api.github.com/repos/{USER_NAME}/{REPO_NAME}/git/blobs'
     headers = {'Authorization': f'token {ACCESS_TOKEN_GITHUB}'}
     data = {
-        'message': COMMIT_MESSAGE,
-        'content': get_file_content_base64(file_path)
+        'content': get_file_content_base64(file_path),
+        'encoding': 'base64'
     }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data['sha'] = response.json()['sha']
-        requests.put(url, headers=headers, json=data)
-    elif response.status_code == 404:
-        requests.put(url, headers=headers, json=data)
-    else:
-        response.raise_for_status()
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()  # Ensure we get a 200 response
+    return response.json()['sha']
 
-def deploy_webgl_build(webgl_build_path):
-    print("Deploying WebGL")
-    for root, _, files in os.walk(webgl_build_path):
-        for file in files:
-            file_path = os.path.join(root, file)
-            path_in_repo = os.path.join('ClientApp', 'public', 'Build', os.path.relpath(file_path, webgl_build_path))
-            push_file_to_github(file_path, path_in_repo.replace('\\', '/'))
+def push_files_to_github(files, commit_message, branch):
+    base_url = f'https://api.github.com/repos/{USER_NAME}/{REPO_NAME}'
+
+    # Get the SHA of the latest commit on the branch
+    url = f'{base_url}/git/refs/heads/{branch}'
+    headers = {'Authorization': f'token {ACCESS_TOKEN_GITHUB}'}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()  # Ensure we get a 200 response
+    latest_commit_sha = response.json()['object']['sha']
+
+    # Create a blob for each file
+    tree = []
+    for file_path in files:
+        blob_sha = create_blob(file_path)
+        os_path_in_repo = os.path.join('ClientApp', 'public', 'Build', os.path.basename(file_path))
+        path_in_repo = os_path_in_repo.replace('\\', '/')
+        tree.append({
+            'path': path_in_repo,
+            'mode': '100644',  # This means "file"
+            'type': 'blob',
+            'sha': blob_sha
+        })
+
+    # Create a tree
+    url = f'{base_url}/git/trees'
+    data = {
+        'base_tree': latest_commit_sha,
+        'tree': tree
+    }
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()  # Ensure we get a 200 response
+    tree_sha = response.json()['sha']
+
+    # Create a commit
+    url = f'{base_url}/git/commits'
+    data = {
+        'message': commit_message,
+        'tree': tree_sha,
+        'parents': [latest_commit_sha]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    response.raise_for_status()  # Ensure we get a 200 response
+    commit_sha = response.json()['sha']
+
+    # Update the branch to point to the new commit
+    url = f'{base_url}/git/refs/heads/{branch}'
+    data = {
+        'sha': commit_sha
+    }
+    response = requests.patch(url, headers=headers, json=data)
+    response.raise_for_status()  # Ensure we get a 200 response
 
 def main():
     """
