@@ -12,19 +12,45 @@ import logging
 import requests
 import paramiko
 import subprocess
+import tempfile
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Get the current working directory
+current_dir = os.getcwd()
+
+# Get the parent directory
+parent_dir = os.path.dirname(current_dir)
+
 # Build Paths
-WEBGL_BUILD_PATH = os.getenv('WEBGL_BUILD_PATH')
-LINUX_BUILD_PATH = os.getenv('LINUX_BUILD_PATH')
+WEBGL_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
+LINUX_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
 ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
 WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
 REPO_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-1].split('.git')[0]  # Get repo name from URL
 USER_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-2]  # Get username from URL
 COMMIT_MESSAGE = 'Upload WebGL build'
+
+def create_ssh_keyfile(key_value):
+    """
+    If key_value is a path to a file, it returns the path unchanged.
+    If key_value is SSH key content, it creates a temporary file and writes the SSH key content into it.
+    Returns the path to the existing or created temporary file.
+    """
+    if os.path.isfile(key_value):
+        return key_value  # Key value is a path to an existing file.
+
+    # Key value is the content of the key, create a temporary file.
+    temp_dir = tempfile.mkdtemp()
+    ssh_key_file_path = os.path.join(temp_dir, 'id_rsa')
+    with open(ssh_key_file_path, 'w') as ssh_key_file:
+        ssh_key_file.write(key_value)
+
+    # Change file permissions to -rw-------, as required by SSH.
+    os.chmod(ssh_key_file_path, 0o600)
+    return ssh_key_file_path
 
 def get_current_git_branch():
     try:
@@ -106,7 +132,9 @@ def deploy_linux_build(build_path):
     # Define AWS credentials and SSH key
     user = os.getenv('AWS_USER')
     ip = os.getenv('AWS_IP')
-    key_path = os.path.expanduser(os.getenv('AWS_SSH_KEY'))  # Expanding ~ to the actual home directory
+    
+    key_path = create_ssh_keyfile(os.getenv('AWS_SSH_KEY'))
+    key_path = os.path.expanduser(key_path)  # Expanding ~ to the actual home directory
 
     print(f'AWS user: {user}, IP: {ip}, SSH key path: {key_path}')
 
@@ -135,6 +163,10 @@ def deploy_linux_build(build_path):
 
     # Perform further operations on the remote server
     execute_remote_commands(ssh)
+    
+    if not os.path.isfile(os.getenv('AWS_SSH_KEY')):
+        os.remove(key_path)
+        os.rmdir(os.path.dirname(key_path))
 
     # Close the SSH connection
     ssh.close()
