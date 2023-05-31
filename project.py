@@ -23,10 +23,12 @@ current_dir = os.getcwd()
 
 # Get the parent directory
 parent_dir = os.path.dirname(current_dir)
+print(parent_dir)
 
 # Build Paths
 WEBGL_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
 LINUX_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
+print(LINUX_BUILD_PATH)
 ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
 WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
 REPO_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-1].split('.git')[0]  # Get repo name from URL
