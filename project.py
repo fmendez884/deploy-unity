@@ -29,7 +29,7 @@ print(parent_dir)
 # Build Paths
 WEBGL_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
 LINUX_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
-print(LINUX_BUILD_PATH)
+
 ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
 WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
 REPO_NAME = os.getenv('WEBAPP_REPO_GITHUB').split('/')[-1].split('.git')[0]  # Get repo name from URL
@@ -88,6 +88,7 @@ def determine_environment():
     print(f"Deploying to {env}")
 
 def validate_build_path(build_path, build_type):
+    print(build_path)
     if not build_path:
         raise ValueError("Invalid build path provided")
 
@@ -300,9 +301,12 @@ def main():
     # Check if running in GitHub actions
     if os.getenv('GITHUB_ACTIONS') == 'true':
         build_type = os.getenv('BUILD_TYPE')
+        print(build_type)
         if build_type == 'webgl':
+            print(WEBGL_BUILD_PATH)
             deploy_build(build_type, WEBGL_BUILD_PATH)
         elif build_type == 'linux':
+            print(WEBGL_BUILD_PATH)
             deploy_build(build_type, LINUX_BUILD_PATH)
         else:
             print("No valid build type provided.")
