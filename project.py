@@ -22,7 +22,8 @@ load_dotenv()
 current_dir = os.getcwd()
 
 # Get the parent directory
-parent_dir = os.path.dirname(current_dir)
+# parent_dir = os.path.dirname(current_dir)
+parent_dir = current_dir
 print(parent_dir)
 
 # Build Paths
