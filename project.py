@@ -27,8 +27,8 @@ parent_dir = current_dir
 print(parent_dir)
 
 # Build Paths
-WEBGL_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
-LINUX_BUILD_PATH = os.path.join(os.path.dirname(parent_dir), os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
+WEBGL_BUILD_PATH = os.path.join(parent_dir, os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
+LINUX_BUILD_PATH = os.path.join(parent_dir, os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
 
 ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
 WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
