@@ -56,6 +56,13 @@ def create_ssh_keyfile(key_value):
     return ssh_key_file_path
 
 def get_current_git_branch():
+    github_ref = os.getenv('GITHUB_REF')
+    if github_ref:
+        # The GitHub reference might be something like 'refs/heads/my-branch-name'
+        # Split the string on '/' and get the last item
+        return github_ref.split('/')[-1]
+    
+    # If 'GITHUB_REF' was not set (running script locally, for example), then use the 'git' command
     try:
         command = ['git', 'rev-parse', '--abbrev-ref', 'HEAD']
         result = subprocess.run(command, capture_output=True, text=True)
