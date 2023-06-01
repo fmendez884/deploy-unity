@@ -19,16 +19,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get the current working directory
-current_dir = os.getcwd()
+# current_dir = os.getcwd()
 
 # Get the parent directory
 # parent_dir = os.path.dirname(current_dir)
-parent_dir = current_dir
-print(parent_dir)
+# parent_dir = current_dir
+# print(parent_dir)
 
 # Build Paths
-WEBGL_BUILD_PATH = os.path.join(parent_dir, os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL'))
-LINUX_BUILD_PATH = os.path.join(parent_dir, os.getenv('LINUX_BUILD_PATH', 'Builds/Server'))
+WEBGL_BUILD_PATH = os.getenv('WEBGL_BUILD_PATH', 'Builds/WebGL')
+LINUX_BUILD_PATH = os.getenv('LINUX_BUILD_PATH', 'Builds/Server')
 
 ACCESS_TOKEN_GITHUB = os.getenv("ACCESS_TOKEN_GITHUB")
 WEBAPP_REPO_GITHUB = os.getenv("WEBAPP_REPO_GITHUB")
